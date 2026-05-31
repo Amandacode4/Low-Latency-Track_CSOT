@@ -247,6 +247,21 @@ Different `--rows`, different `--out` (doesn't matter), or you edited `gen.py`. 
 
 ## 📄 CSV Loader
 
+### "Every tick has the same symbol" / "Symbols are garbage after loading"
+
+You pointed `Tick::symbol` at memory that didn't outlive the load loop. Classic mistake:
+
+```cpp
+std::string line;
+while (std::getline(file, line)) {
+    ticks.push_back({ .symbol = line, ... });  // all views alias one buffer
+}
+```
+
+Fix: **intern symbols into loader-owned storage** that stays alive until replay finishes. Keep each distinct symbol name once (e.g. `std::deque<std::string>` + a map from name → `string_view`), then set `tick.symbol` to a view into that stable string. Re-read `ticks[0].symbol` after loading 10 000 rows — if it isn't still `"SYM0"`, your storage is wrong.
+
+See `strategy.hpp`: the engine owns the bytes; during Week 1 that "engine" is your loader.
+
 ### "My loader segfaults at the end of the file"
 
 Almost always a missing EOF check inside your line-parsing loop, or `std::getline` returning an empty line that you treat as a tick. Test on the 20-row `data/tiny.csv` first — segfaults there are much easier to debug than at row 9 999 999.

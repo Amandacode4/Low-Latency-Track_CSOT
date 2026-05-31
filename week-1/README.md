@@ -140,8 +140,8 @@ Don't just read — *touch* the ideas. Each of these is < 50 lines of code.
 The full brief lives in [`project/README.md`](./project/README.md). High-level milestones:
 
 - [ ] **Step 1 — Skeleton:** directory layout in place, `CMakeLists.txt` builds Debug + Release with `-Wall -Wextra -Wpedantic`, `clang-format` config in place.
-- [ ] **Step 2 — Data Generator:** `data/gen.py` produces a CSV with `timestamp_ns,symbol,bid,ask,bid_size,ask_size`. Generated both `synthetic_small.csv` (10 k rows) and `synthetic_large.csv` (10 M rows).
-- [ ] **Step 3 — CSV Loader:** `load_ticks(path)` returns `std::vector<Tick>`; first & last ticks print sane values.
+- [ ] **Step 2 — Data Generator:** `data/gen.py` produces a CSV with `timestamp_ns,symbol,bid_px,ask_px,bid_qty,ask_qty`. Generated both `synthetic_small.csv` (10 k rows) and `synthetic_large.csv` (10 M rows).
+- [ ] **Step 3 — CSV Loader:** `load_ticks(path)` returns `std::vector<Tick>` with **stable symbol storage** (intern each symbol; don't point `string_view`s at a reused line buffer); first & last ticks print sane values and `ticks[0].symbol` is still correct after load.
 - [ ] **Step 4 — Strategy API:** `strategy.hpp` copied unchanged; a `null_strategy.cpp` returns no orders and compiles.
 - [ ] **Step 5 — Replay Engine:** `engine.cpp` runs the per-tick loop, times each `on_tick`, and prints p50 / p90 / p99 / p999 via the `LatencyHistogram` helper.
 - [ ] **Step 6 — Implement the Strategy Spec:** your `spec_strategy.cpp` implements [`project/STRATEGY_SPEC.md`](./project/STRATEGY_SPEC.md), matches the expected order stream on `tiny.csv`, and runs end-to-end on `synthetic_large.csv`. Headline numbers captured:

@@ -242,8 +242,9 @@ Follow this order — each step should compile and run before moving on.
 ### Step 3 — CSV Loader (Day 2, ~1 hour)
 
 - Write a `load_ticks(path) -> std::vector<csot::Tick>` function. Skip the header row. Parse each field according to the [frozen schema](#contract-1--the-csv-schema-frozen).
-- Don't worry about performance yet — we'll measure and improve.
-- **Verify on `tiny.csv` first.** Print the first and last loaded ticks and check they match the file exactly (the file has trivial round-number prices on purpose).
+- **`Tick::symbol` is a `std::string_view`, not an owning string.** It must point at storage **you** keep alive for the whole replay — not at a reused `getline` buffer or a temporary `std::string` that goes out of scope each iteration. The usual Week-1 pattern: **intern** each distinct symbol once (e.g. a small map + `std::deque<std::string>` so addresses stay stable) and set `tick.symbol` to a view into that phonebook. There are only a handful of symbols per file; do not store a full copy of the symbol name on every row unless you know why.
+- Don't worry about loader performance yet — we'll measure and improve the hot loop first.
+- **Verify on `tiny.csv` first.** Print the first and last loaded ticks and check they match the file exactly (the file has trivial round-number prices on purpose). Re-read `ticks[0].symbol` after the load finishes — it must still be `"SYM0"`, not the last symbol in the file.
 - Then verify on `synthetic_small.csv`.
 
 ### Step 4 — The Null Strategy (Day 2, ~20 min)
