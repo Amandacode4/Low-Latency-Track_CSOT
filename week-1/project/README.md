@@ -455,6 +455,7 @@ Your laptop will produce *different* (often faster on single-core) numbers — t
 - **Cooldown + daily quota** are enforced server-side. The dashboard shows the current window; trying to spam-upload returns `429`.
 - **One identity, one entry.** No teams.
 - **Max upload size:** 5 MiB. `.so` only, must export `extern "C" csot::Strategy* create_strategy()`.
+- **Build for the judge CPU, not yours.** Release defaults in the shipped `CMakeLists.txt` use `-march=native` — great for local benchmarks, but if your laptop has newer instructions (AVX-512, etc.) than the judge EC2 box, the upload fails with **`rejected` / `runner exit 132`** (`SIGILL`, illegal instruction). Rebuild with a portable flag such as `-march=x86-64-v2` before uploading. Details: [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md) → *Portal upload shows `rejected` with `runner exit 132`*.
 - **The judge VM may be stopped** between cohort sessions to save cost — when it is, the dashboard shows a grey "judge offline" pill. Submissions still queue, and drain as soon as the judge is back up. (`Restart=always` means a fresh `aws ec2 start-instances` brings everything back without intervention.)
 
 ### What you do NOT have to do this week
@@ -483,8 +484,11 @@ A: We won't stop you, but our examples & support are C++. You're on your own for
 **Q: Can I write a different strategy?**
 A: Not for the ranked challenge. Every submission must implement [`STRATEGY_SPEC.md`](./STRATEGY_SPEC.md). Otherwise the contest would measure strategy choice instead of low-latency engineering. You can experiment with other strategies locally, but the leaderboard cares only about the fixed spec.
 
+**Q: My upload was `rejected` with `runner exit 132`. What happened?**
+A: That's `SIGILL` — your `.so` contains CPU instructions the judge doesn't support. Almost always caused by building with `-march=native` on a newer machine than the judge EC2 box. Rebuild with `-march=x86-64-v2` (or see the portable-build one-liner in [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md)).
+
 **Q: I'm stuck on a build error / segfault / weird perf result.**
-A: Check [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md) — it covers the 50 most common pitfalls (`perf` permissions, `dlopen` symbol issues, ASan false positives, WSL gotchas, noisy benchmarks, etc.).
+A: Check [`TROUBLESHOOTING.md`](./TROUBLESHOOTING.md) — it covers the most common pitfalls (`perf` permissions, `dlopen` symbol issues, portal `runner exit 132`, ASan false positives, WSL gotchas, noisy benchmarks, etc.).
 
 ---
 

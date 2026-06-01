@@ -96,6 +96,33 @@ Usually one of:
 
 Run `nm -D --defined-only your_strategy.so | grep create` — you should see a plain `create_strategy` symbol.
 
+### Portal upload shows `rejected` with `runner exit 132`
+
+Exit code **132** means the sandboxed runner hit **signal 4 (`SIGILL`)** — an **illegal instruction**. Your `.so` compiled fine on *your* machine but contains CPU instructions the judge box doesn't have.
+
+The usual cause: **`-march=native`**. The shipped `CMakeLists.txt` enables it for Release builds so local benchmarks can use AVX2/AVX-512 on your laptop. The judge runs on a fixed EC2 instance (`c5.2xlarge`, Amazon Linux 2023) — not your CPU.
+
+**Fix:** rebuild `spec_strategy.so` with a portable baseline before uploading:
+
+```bash
+# One-off Release build without -march=native (override the shipped default):
+cmake -B build-portable -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_FLAGS_RELEASE="-O2 -march=x86-64-v2 -fno-omit-frame-pointer"
+cmake --build build-portable -j --target spec_strategy
+```
+
+`-march=x86-64-v2` is conservative (~2009 CPUs, SSE4.2). If you want AVX2 locally *and* on the judge, use `-march=x86-64-v3` instead — still safer than `native`.
+
+Sanity-check the binary before uploading:
+
+```bash
+file build-portable/spec_strategy.so    # must say "ELF 64-bit LSB shared object, x86-64"
+```
+
+On the dashboard, a failed public gate shows **Public correctness → `runner exit 132`**. That's a load/crash problem, not a strategy divergence — fix the build flags, not the algorithm.
+
+See also [`05-bonus-compiler.md`](../05-bonus-compiler.md) §2 for why `-march=native` and deployment don't mix.
+
 ---
 
 ## 📊 perf
