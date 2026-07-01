@@ -1,0 +1,245 @@
+// ============================================================================
+//  pipeline.stub.cpp — STARTING POINT for the Week-4 lock-free pipeline
+//  challenge.
+//
+//  Copy this to `pipeline.cpp`, then make it FAST:
+//      cp samples/pipeline.stub.cpp pipeline.cpp
+//      cmake -B build -DCSOT_PIPE_SRC=pipeline.cpp && cmake --build build -j
+//      ./build/pipeline_runner data/tiny.feed     # compare to data/tiny.orders.json
+//
+//  Like the Week-3 stub, this one is CORRECT: it decodes the feed and runs the
+//  frozen Week-1 z-score strategy spec (PIPELINE_SPEC.md §4-§6, STRATEGY_SPEC.md
+//  §5-§8) SINGLE-THREADED, in stream order. It passes data/tiny.feed out of the
+//  box and produces the exact reference order stream. That is on purpose —
+//  Week 4's challenge is NOT the (fully specified) strategy; it is overlapping
+//  the decode and the strategy across two cores through a lock-free hand-off.
+//
+//  YOUR JOB: keep it correct and deterministic, and make run() fast by:
+//    1. moving the decode onto its OWN producer thread            (05-pipeline-...)
+//    2. handing each decoded tick to the strategy thread across a
+//       lock-free SPSC RING BUFFER you build                      (04-spsc-ring-buffer.md)
+//    3. publishing with release / observing with acquire          (03-memory-orderings.md)
+//    4. keeping head and tail on SEPARATE cache lines (no false
+//       sharing) and pinning both threads to distinct cores       (Week 3)
+//    5. allocating the ring, the per-symbol state, and the interned
+//       names in on_init() — zero heap in run()
+//
+//  A correct single-threaded entry (this file, unchanged) is a VALID upload; it
+//  just ranks near the bottom because the decode and the strategy run one after
+//  the other instead of at the same time. The board is won on speed.
+//
+//  Everything must live in this ONE translation unit. The judge builds exactly
+//  this file against its own main(); no extra .cpp, no custom CMake. Threads,
+//  <atomic>, and sched_setaffinity ARE allowed (this is the whole point) —
+//  see TROUBLESHOOTING.md.
+// ============================================================================
+
+#include "pipeline.hpp"
+
+#include <cmath>
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <thread>
+#include <atomic>
+#include <cstring>
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
+#endif
+
+namespace {
+
+// --- Frozen strategy constants (STRATEGY_SPEC.md §3) ------------------------
+constexpr std::uint32_t WINDOW = 64;
+constexpr double        ENTRY_Z = 2.0;
+constexpr double        EXIT_Z = 0.5;
+constexpr double        EPSILON_STDDEV = 1e-9;
+
+// Per-symbol rolling state (Optimized from Week-2)
+struct SymbolState {
+    double        sum = 0.0;
+    double        sum_sq = 0.0;
+    double        mids[WINDOW] = {};
+    std::uint32_t count = 0;     // valid mids seen so far, capped at WINDOW
+    std::uint32_t head = 0;      // next write index into mids[]
+    std::int32_t  position = 0;  // -1, 0, or +1
+};
+
+struct RingItem {
+    std::uint64_t tick_index;
+    double bid_px;
+    double ask_px;
+    std::uint32_t bid_qty;
+    std::uint32_t ask_qty;
+    std::uint32_t symbol_id;
+};
+
+constexpr std::size_t RING_CAPACITY = 262144; // Power of 2
+constexpr std::size_t RING_MASK = RING_CAPACITY - 1;
+
+class FastPipeline final : public csot::Pipeline {
+    std::uint32_t                 num_symbols_ = 0;
+    std::vector<std::string>      names_;   
+    std::vector<SymbolState>      state_;
+    
+    // SPSC Ring Buffer
+    RingItem* ring_ = nullptr;
+    alignas(64) std::atomic<std::size_t> head_{0};
+    alignas(64) std::size_t cached_tail_{0};
+    alignas(64) std::atomic<std::size_t> tail_{0};
+    alignas(64) std::size_t cached_head_{0};
+
+    static void pin_thread(int core_id) {
+#ifdef __linux__
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(core_id % sysconf(_SC_NPROCESSORS_ONLN), &cpuset);
+        pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+#endif
+    }
+
+public:
+    ~FastPipeline() override {
+        delete[] ring_;
+    }
+
+    void on_init(std::uint32_t num_symbols) override {
+        num_symbols_ = num_symbols;
+        names_.resize(num_symbols);
+        for (std::uint32_t k = 0; k < num_symbols; ++k) {
+            names_[k] = "SYM" + std::to_string(k);
+        }
+        state_.assign(num_symbols, SymbolState{});
+        ring_ = new RingItem[RING_CAPACITY];
+    }
+
+    std::size_t run(const csot::WireTick* in, std::size_t n, csot::OrderRecord* out) override {
+        if (n == 0) return 0;
+        
+        head_.store(0, std::memory_order_relaxed);
+        tail_.store(0, std::memory_order_relaxed);
+        cached_head_ = 0;
+        cached_tail_ = 0;
+
+        std::size_t num_orders = 0;
+
+        auto producer = [&]() {
+            pin_thread(0);
+            std::size_t h = 0;
+            for (std::size_t i = 0; i < n; ++i) {
+                const csot::WireTick& w = in[i];
+                
+                // Spin until space is available
+                while (h - cached_tail_ >= RING_CAPACITY) {
+                    cached_tail_ = tail_.load(std::memory_order_acquire);
+#if defined(__x86_64__)
+                    asm volatile("pause" ::: "memory");
+#elif defined(__aarch64__)
+                    asm volatile("yield" ::: "memory");
+#endif
+                }
+                
+                RingItem& item = ring_[h & RING_MASK];
+                item.tick_index = i;
+                item.bid_px = static_cast<double>(w.bid_px_fp) / static_cast<double>(csot::PRICE_SCALE);
+                item.ask_px = static_cast<double>(w.ask_px_fp) / static_cast<double>(csot::PRICE_SCALE);
+                item.bid_qty = w.bid_qty;
+                item.ask_qty = w.ask_qty;
+                item.symbol_id = w.symbol_id;
+                
+                h++;
+                head_.store(h, std::memory_order_release);
+            }
+        };
+
+        std::thread prod_thread(producer);
+
+        pin_thread(1);
+        std::size_t t = 0;
+        while (t < n) {
+            while (cached_head_ <= t) {
+                cached_head_ = head_.load(std::memory_order_acquire);
+#if defined(__x86_64__)
+                asm volatile("pause" ::: "memory");
+#elif defined(__aarch64__)
+                asm volatile("yield" ::: "memory");
+#endif
+            }
+
+            const RingItem& item = ring_[t & RING_MASK];
+            const std::uint32_t sym = item.symbol_id;
+            SymbolState& st = state_[sym];
+            const double mid = (item.bid_px + item.ask_px) * 0.5;
+            
+            const double old_mid = st.mids[st.head];
+            st.sum -= old_mid;
+            st.sum_sq -= old_mid * old_mid;
+            
+            st.mids[st.head] = mid;
+            st.sum += mid;
+            st.sum_sq += mid * mid;
+            
+            st.head = (st.head + 1) & (WINDOW - 1);
+            if (st.count < WINDOW) {
+                ++st.count;
+            }
+
+            if (st.count == WINDOW) {
+                const double mean = st.sum / static_cast<double>(WINDOW);
+                const double variance = (st.sum_sq / static_cast<double>(WINDOW)) - (mean * mean);
+                const double stddev = variance > 0 ? std::sqrt(variance) : 0.0;
+                
+                if (stddev >= EPSILON_STDDEV) {
+                    const double z = (mid - mean) / stddev;
+                    const double abs_z = std::fabs(z);
+                    
+                    csot::Order order{};
+                    bool emit = false;
+
+                    if (st.position == 0) {
+                        if (z >= ENTRY_Z) {
+                            order = {csot::Order::Side::SELL, names_[sym], item.bid_px, 1};
+                            st.position -= 1;
+                            emit = true;
+                        } else if (z <= -ENTRY_Z) {
+                            order = {csot::Order::Side::BUY, names_[sym], item.ask_px, 1};
+                            st.position += 1;
+                            emit = true;
+                        }
+                    } else if (st.position > 0 && abs_z <= EXIT_Z) {
+                        order = {csot::Order::Side::SELL, names_[sym], item.bid_px, static_cast<std::uint32_t>(st.position)};
+                        st.position = 0;
+                        emit = true;
+                    } else if (st.position < 0 && abs_z <= EXIT_Z) {
+                        order = {csot::Order::Side::BUY, names_[sym], item.ask_px, static_cast<std::uint32_t>(-st.position)};
+                        st.position = 0;
+                        emit = true;
+                    }
+
+                    if (emit) {
+                        out[num_orders].tick_index = item.tick_index;
+                        out[num_orders].order = order;
+                        ++num_orders;
+                    }
+                }
+            }
+
+            t++;
+            // Batch tail update to reduce cache line traffic
+            if ((t & 63) == 0 || t == n) {
+                tail_.store(t, std::memory_order_release);
+            }
+        }
+
+        prod_thread.join();
+        return num_orders;
+    }
+};
+
+}  // namespace
+
+extern "C" csot::Pipeline* create_pipeline() {
+    return new FastPipeline();
+}

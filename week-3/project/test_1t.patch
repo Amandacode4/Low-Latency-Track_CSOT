@@ -1,0 +1,11 @@
+--- aggregator.cpp
++++ aggregator.cpp
+@@ -141,7 +141,7 @@
+         g_num_symbols = num_symbols;
+         
+         unsigned int hw_threads = std::thread::hardware_concurrency();
+-        if (hw_threads == 0) hw_threads = 4;
++        hw_threads = 1; // Force 1 thread
+         if (hw_threads > MAX_THREADS) hw_threads = MAX_THREADS;
+         g_total_threads = hw_threads;
+         g_num_workers = hw_threads - 1;

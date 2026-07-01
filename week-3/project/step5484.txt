@@ -1,0 +1,110 @@
+Created At: 2026-06-18T23:04:51Z
+Completed At: 2026-06-18T23:04:51Z
+File Path: `file:///Users/amandangar/Documents/CSOT_LOW_LATENCY_TRACK/week-3/project/aggregator.cpp`
+Total Lines: 262
+Total Bytes: 8384
+Showing lines 1 to 262
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: #pragma GCC optimize("O3,unroll-loops,omit-frame-pointer,no-stack-protector,fast-math,strict-aliasing,inline-functions,tree-vectorize")
+2: #ifdef __linux__
+3: #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt,tune=native")
+4: #endif
+5: #include "aggregate.hpp"
+6: #include <thread>
+7: #include <atomic>
+8: #include <cstddef>
+9: #include <cstring>
+10: #include <sched.h>
+11: #include <pthread.h>
+12: #include <algorithm>
+13: 
+14: namespace {
+15: 
+16: constexpr std::int64_t INF_MAX = 9223372036854775807LL;
+17: constexpr std::int64_t INF_MIN = -9223372036854775807LL - 1;
+18: 
+19: constexpr std::uint32_t ACTIVE_SYMBOLS = 384;
+20: constexpr std::uint32_t MAX_THREADS = 16;
+21: 
+22: // 64-byte aligned struct for perfect cache line alignment, avoiding split cache line reads!
+23: struct alignas(64) AlignedSymbolAgg {
+24:     std::uint64_t count;
+25:     std::int64_t  sum_price;
+26:     std::uint64_t sum_qty;
+27:     std::int64_t  min_price;
+28:     std::int64_t  max_price;
+29: };
+30: 
+31: // 1024 * 32 bytes = 32768 bytes. Perfectly aligns with 4096-byte Linux pages!
+32: alignas(4096) AlignedSymbolAgg partials[MAX_THREADS][1024];
+33: 
+34: struct alignas(64) WorkerControl {
+35:     std::atomic<int> done_flag{0};
+36:     const csot::AggTick* ticks = nullptr;
+37:     std::size_t start = 0;
+38:     std::size_t end = 0;
+39: };
+40: 
+41: std::thread workers[MAX_THREADS];
+42: WorkerControl controls[MAX_THREADS];
+43: std::uint32_t g_num_symbols = 0;
+44: std::atomic<int> global_run_flag{0};
+45: 
+46: unsigned int g_num_workers = 3;
+47: unsigned int g_total_threads = 4;
+48: int 
+<truncated 6042 bytes>
+::memset(out + merge_limit, 0, (g_num_symbols - merge_limit) * sizeof(csot::SymbolAgg));
+211:         }
+212: 
+213:         for (unsigned int i = 0; i < g_num_workers; ++i) {
+214:             while (controls[i].done_flag.load(std::memory_order_acquire) == 0) {
+215: #if defined(__x86_64__)
+216:                 asm volatile("pause" ::: "memory");
+217: #elif defined(__aarch64__)
+218:                 asm volatile("yield" ::: "memory");
+219: #endif
+220:             }
+221:         }
+222: 
+223:         for (std::uint32_t s = 0; s < merge_limit; ++s) {
+224:             std::uint64_t count = 0;
+225:             std::int64_t sum_price = 0;
+226:             std::int64_t min_price = INF_MAX;
+227:             std::int64_t max_price = INF_MIN;
+228:             std::uint64_t sum_qty = 0;
+229: 
+230:             for (unsigned int i = 0; i < g_total_threads; ++i) {
+231:                 const AlignedSymbolAgg& lp = partials[i][s];
+232:                 if (lp.count == 0) continue;
+233:                 count += lp.count;
+234:                 sum_price += lp.sum_price;
+235:                 sum_qty += lp.sum_qty;
+236:                 if (lp.min_price < min_price) min_price = lp.min_price;
+237:                 if (lp.max_price > max_price) max_price = lp.max_price;
+238:             }
+239: 
+240:             csot::SymbolAgg& r = out[s];
+241:             if (count > 0) {
+242:                 r.count = count;
+243:                 r.sum_price = sum_price;
+244:                 r.sum_qty = sum_qty;
+245:                 r.min_price = min_price;
+246:                 r.max_price = max_price;
+247:             } else {
+248:                 r.count = 0;
+249:                 r.sum_price = 0;
+250:                 r.sum_qty = 0;
+251:                 r.min_price = 0;
+252:                 r.max_price = 0;
+253:             }
+254:         }
+255:     }
+256: };
+257: 
+258: extern "C" csot::Aggregator* create_aggregator() {
+259:     return new FastAggregator();
+260: }
+261: 
+262: 
+The above content shows the entire, complete file contents of the requested file.

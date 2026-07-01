@@ -1,0 +1,58 @@
+--- aggregator.cpp
++++ aggregator.cpp
+@@ -35,6 +35,7 @@
+ std::thread workers[MAX_THREADS];
+ WorkerControl controls[MAX_THREADS];
+ alignas(128) std::atomic<int> global_run_flag{0};
++alignas(128) std::atomic<std::size_t> global_cursor{0};
+ 
+ unsigned int g_total_threads = 4;
+ unsigned int g_num_workers = 3;
+@@ -87,6 +88,7 @@
+     AlignedSymbolAgg* __restrict__ local_out = partials[id];
+     std::uint64_t* __restrict__ local_qtys = partial_qtys[id];
+     WorkerControl& ctrl = controls[id];
+     int local_run_count = 0;
+ 
+@@ -104,11 +106,12 @@
+             local_qtys[s]          = 0;
+         }
+ 
+-        for (std::size_t sub_start = ctrl.start; sub_start < ctrl.end; sub_start += SUB_CHUNK_SIZE) {
+-            std::size_t sub_end = std::min(sub_start + SUB_CHUNK_SIZE, ctrl.end);
++        while (true) {
++            std::size_t sub_start = global_cursor.fetch_add(SUB_CHUNK_SIZE, std::memory_order_relaxed);
++            if (sub_start >= ctrl.end) break; // ctrl.end is n
++            std::size_t sub_end = std::min(sub_start + SUB_CHUNK_SIZE, ctrl.end);
+             
+             process_chunk(ctrl.ticks, sub_start, sub_end, local_out);
+ 
+@@ -165,11 +168,13 @@
+     void run(const csot::AggTick* ticks, std::size_t n, csot::SymbolAgg* out) override {
+         if (n == 0) return;
+ 
+-        const std::size_t chunk_size = n / g_total_threads;
++        global_cursor.store(0, std::memory_order_relaxed);
+         
+         for (unsigned int i = 0; i < g_num_workers; ++i) {
+             controls[i].ticks = ticks;
+-            controls[i].start = i * chunk_size;
+-            controls[i].end   = (i + 1) * chunk_size;
++            controls[i].start = 0;
++            controls[i].end   = n;
+             controls[i].done_flag.store(0, std::memory_order_release);
+         }
+ 
+@@ -185,11 +190,12 @@
+             local_qtys[s]          = 0;
+         }
+ 
+-        for (std::size_t sub_start = g_num_workers * chunk_size; sub_start < n; sub_start += SUB_CHUNK_SIZE) {
+-            std::size_t sub_end = std::min(sub_start + SUB_CHUNK_SIZE, n);
++        while (true) {
++            std::size_t sub_start = global_cursor.fetch_add(SUB_CHUNK_SIZE, std::memory_order_relaxed);
++            if (sub_start >= n) break;
++            std::size_t sub_end = std::min(sub_start + SUB_CHUNK_SIZE, n);
+             
+             process_chunk(ticks, sub_start, sub_end, local_out);
+ 

@@ -1,0 +1,43 @@
+--- aggregator.cpp
++++ aggregator.cpp
+@@ -10,6 +10,13 @@
+ #include <atomic>
+ #include <cstring>
+ #include <algorithm>
++#ifdef __linux__
++#include <pthread.h>
++#include <sched.h>
++#include <unistd.h>
++#endif
+ 
+ namespace {
+ 
+@@ -87,6 +94,14 @@
+     std::uint64_t* __restrict__ local_qtys = partial_qtys[id];
+     WorkerControl& ctrl = controls[id];
+     int local_run_count = 0;
++
++#ifdef __linux__
++    cpu_set_t cpuset;
++    CPU_ZERO(&cpuset);
++    // Pin to core id + 1 (since main thread might be on core 0)
++    CPU_SET((id + 1) % sysconf(_SC_NPROCESSORS_ONLN), &cpuset);
++    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
++#endif
+ 
+     while (true) {
+         int current;
+@@ -142,6 +157,13 @@
+         if (hw_threads > MAX_THREADS) hw_threads = MAX_THREADS;
+         g_total_threads = hw_threads;
+         g_num_workers = hw_threads - 1;
++
++#ifdef __linux__
++        cpu_set_t cpuset;
++        CPU_ZERO(&cpuset);
++        CPU_SET(0, &cpuset); // Pin main thread to core 0
++        pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
++#endif
+ 
+         for (unsigned int i = 0; i < g_num_workers; ++i) {
+             workers[i] = std::thread(worker_func, i);

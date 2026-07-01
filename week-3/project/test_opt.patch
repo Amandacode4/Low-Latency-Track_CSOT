@@ -1,0 +1,109 @@
+--- aggregator.cpp
++++ aggregator.cpp
+@@ -16,7 +16,7 @@
+ 
+ struct alignas(32) AlignedSymbolAgg {
+-    std::uint32_t count;
+-    std::uint32_t sum_qty_32; // Perfectly packed without branches!
++    std::uint64_t count_and_qty; // lower 32: count, upper 32: qty
+     std::int64_t  sum_price;
+     std::int64_t  min_price;
+     std::int64_t  max_price;
+ };
+ 
+@@ -42,7 +42,7 @@
+ inline void process_chunk(const csot::AggTick* ticks, std::size_t start, std::size_t end, AlignedSymbolAgg* local_out) {
+     for (std::uint32_t s = 0; s < ACTIVE_SYMBOLS; ++s) {
+-        local_out[s].sum_qty_32 = 0;
++        local_out[s].count_and_qty = 0;
+     }
+ 
+     const csot::AggTick* __restrict__ p = ticks + start;
+@@ -51,8 +51,11 @@
+     #pragma GCC unroll 8
+     while (p + 2 <= p_end) {
+-        std::uint32_t s0 = p[0].symbol_id;
+-        std::uint32_t s1 = p[1].symbol_id;
++        std::uint64_t iq0 = *reinterpret_cast<const std::uint64_t*>(&p[0]);
++        std::uint64_t iq1 = *reinterpret_cast<const std::uint64_t*>(&p[1]);
++
++        std::uint32_t s0 = static_cast<std::uint32_t>(iq0);
++        std::uint32_t s1 = static_cast<std::uint32_t>(iq1);
+ 
+         AlignedSymbolAgg& r0 = local_out[s0];
+         AlignedSymbolAgg& r1 = local_out[s1];
+         
+@@ -66,11 +69,8 @@
+         if (__builtin_expect(pr1 > r1.max_price, 0)) r1.max_price = pr1;
+ 
+-        r0.count++;
+-        r1.count++;
+-
+         r0.sum_price += pr0;
+         r1.sum_price += pr1;
+ 
+-        r0.sum_qty_32 += p[0].qty;
+-        r1.sum_qty_32 += p[1].qty;
++        r0.count_and_qty += (iq0 & 0xFFFFFFFF00000000ULL) | 1ULL;
++        r1.count_and_qty += (iq1 & 0xFFFFFFFF00000000ULL) | 1ULL;
+ 
+         p += 2;
+     }
+@@ -78,7 +78,8 @@
+     while (p < p_end) {
+-        std::uint32_t s = p->symbol_id;
++        std::uint64_t iq = *reinterpret_cast<const std::uint64_t*>(&p[0]);
++        std::uint32_t s = static_cast<std::uint32_t>(iq);
+         AlignedSymbolAgg& r = local_out[s];
+         const std::int64_t price = p->price;
+ 
+         if (__builtin_expect(price < r.min_price, 0)) r.min_price = price;
+         if (__builtin_expect(price > r.max_price, 0)) r.max_price = price;
+         
+-        r.count++;
+         r.sum_price += price;
+-        r.sum_qty_32 += p->qty;
++        r.count_and_qty += (iq & 0xFFFFFFFF00000000ULL) | 1ULL;
+         
+         ++p;
+     }
+ }
+@@ -107,6 +108,5 @@
+         for (std::uint32_t s = 0; s < ACTIVE_SYMBOLS; ++s) {
+-            local_out[s].count     = 0;
+             local_out[s].sum_price = 0;
+             local_out[s].min_price = INF_MAX;
+             local_out[s].max_price = INF_MIN;
+             local_qtys[s]          = 0;
+@@ -118,6 +118,7 @@
+ 
+             for (std::uint32_t s = 0; s < ACTIVE_SYMBOLS; ++s) {
+-                local_qtys[s] += local_out[s].sum_qty_32;
++                local_qtys[s] += (local_out[s].count_and_qty >> 32);
++                local_out[s].count_and_qty &= 0xFFFFFFFFULL; // keep only count
+             }
+         }
+@@ -166,6 +167,5 @@
+ 
+         for (std::uint32_t s = 0; s < ACTIVE_SYMBOLS; ++s) {
+-            local_out[s].count     = 0;
+             local_out[s].sum_price = 0;
+             local_out[s].min_price = INF_MAX;
+             local_out[s].max_price = INF_MIN;
+             local_qtys[s]          = 0;
+@@ -177,6 +177,7 @@
+ 
+             for (std::uint32_t s = 0; s < ACTIVE_SYMBOLS; ++s) {
+-                local_qtys[s] += local_out[s].sum_qty_32;
++                local_qtys[s] += (local_out[s].count_and_qty >> 32);
++                local_out[s].count_and_qty &= 0xFFFFFFFFULL; // keep only count
+             }
+         }
+@@ -198,7 +199,7 @@
+             for (unsigned int i = 0; i < g_total_threads; ++i) {
+                 const AlignedSymbolAgg& lp = partials[i][s];
+-                std::uint32_t c = lp.count;
++                std::uint32_t c = static_cast<std::uint32_t>(lp.count_and_qty);
+                 if (c == 0) continue;
+                 
+                 count += c;
