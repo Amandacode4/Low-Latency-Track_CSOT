@@ -18,6 +18,10 @@
 #include <sched.h>
 #include <pthread.h>
 #include <unistd.h>
+// Needed for SO_BUSY_POLL if not defined
+#ifndef SO_BUSY_POLL
+#define SO_BUSY_POLL 46
+#endif
 #endif
 
 namespace {
@@ -88,6 +92,12 @@ public:
         head_.store(0, std::memory_order_relaxed);
         tail_.store(0, std::memory_order_relaxed);
 
+#ifdef __linux__
+        // Enable kernel-level busy polling for ultra-low latency on the socket
+        int busy_poll_us = 50;
+        setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &busy_poll_us, sizeof(busy_poll_us));
+#endif
+
         std::size_t num_orders = 0;
 
         auto ingest = [&]() {
@@ -98,9 +108,42 @@ public:
             std::uint64_t next_seq = 0;
             std::uint64_t unacked_count = 0;
             
+#ifdef __linux__
+            // Use recvmmsg to batch up to 32 datagrams in a SINGLE system call
+            constexpr unsigned int VLEN = 32;
+            struct mmsghdr msgs[VLEN];
+            struct iovec iovecs[VLEN];
+            unsigned char bufs[VLEN][csot::MAX_FEED_DATAGRAM_BYTES];
+            
+            for (unsigned int i = 0; i < VLEN; ++i) {
+                iovecs[i].iov_base = bufs[i];
+                iovecs[i].iov_len = csot::MAX_FEED_DATAGRAM_BYTES;
+                msgs[i].msg_hdr.msg_name = nullptr;
+                msgs[i].msg_hdr.msg_namelen = 0;
+                msgs[i].msg_hdr.msg_iov = &iovecs[i];
+                msgs[i].msg_hdr.msg_iovlen = 1;
+                msgs[i].msg_hdr.msg_control = nullptr;
+                msgs[i].msg_hdr.msg_controllen = 0;
+            }
+#else
             std::vector<unsigned char> dgram(csot::MAX_FEED_DATAGRAM_BYTES);
+#endif
             
             while (processed < n) {
+#ifdef __linux__
+                int retval = recvmmsg(fd, msgs, VLEN, MSG_DONTWAIT, nullptr);
+                if (retval < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                        asm volatile("pause" ::: "memory");
+                        continue;
+                    }
+                    break;
+                }
+                
+                for (int i = 0; i < retval; ++i) {
+                    ssize_t k = msgs[i].msg_len;
+                    unsigned char* dgram_data = bufs[i];
+#else
                 const ssize_t k = ::recv(fd, dgram.data(), dgram.size(), MSG_DONTWAIT);
                 if (k < 0) {
                     if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
@@ -113,23 +156,18 @@ public:
                     }
                     break;
                 }
+                unsigned char* dgram_data = dgram.data();
+#endif
                 
                 if (k < static_cast<ssize_t>(sizeof(csot::FeedDatagramHeader))) {
                     continue;
                 }
 
                 csot::FeedDatagramHeader hdr;
-                std::memcpy(&hdr, dgram.data(), sizeof(hdr));
+                std::memcpy(&hdr, dgram_data, sizeof(hdr));
                 
-                if (hdr.seq != next_seq) {
-                    // Out of order or gap. This shouldn't happen on loopback with ACKs.
-                    // But we MUST assert or handle it to be safe.
-                    // For the sake of speed, assume in order as guaranteed.
-                }
-
-                const unsigned char* tick_bytes = dgram.data() + sizeof(csot::FeedDatagramHeader);
+                const unsigned char* tick_bytes = dgram_data + sizeof(csot::FeedDatagramHeader);
                 
-                // Decode and push each tick to the ring buffer
                 for (std::uint32_t j = 0; j < hdr.count && processed < n; ++j) {
                     csot::WireTick w;
                     std::memcpy(&w, tick_bytes + static_cast<std::size_t>(j) * sizeof(csot::WireTick), sizeof(csot::WireTick));
@@ -144,7 +182,7 @@ public:
                     }
                     
                     RingItem& item = ring_[h & RING_MASK];
-                    item.tick_index = processed; // tick index in feed
+                    item.tick_index = processed;
                     item.bid_px = static_cast<double>(w.bid_px_fp) / static_cast<double>(csot::PRICE_SCALE);
                     item.ask_px = static_cast<double>(w.ask_px_fp) / static_cast<double>(csot::PRICE_SCALE);
                     item.symbol_id = w.symbol_id;
@@ -153,10 +191,8 @@ public:
                     ++processed;
                 }
                 
-                // Release the batch of ticks to the consumer
                 head_.store(h, std::memory_order_release);
                 
-                // ACK flow control
                 next_seq = hdr.seq + 1;
                 unacked_count++;
                 
@@ -164,6 +200,9 @@ public:
                     (void)::send(fd, &next_seq, sizeof(next_seq), 0);
                     unacked_count = 0;
                 }
+#ifdef __linux__
+                } // end for loop over batched messages
+#endif
             }
         };
 
@@ -198,7 +237,6 @@ public:
 
                 if (st.count == WINDOW) {
                     double sum = 0.0;
-                    // Force the compiler to use Aligned SIMD instructions (vmovapd)
                     const double* __restrict m = (const double*)__builtin_assume_aligned(st.mids, 64);
                     
                     #pragma GCC unroll 8
@@ -250,7 +288,6 @@ public:
                 }
                 
                 t++;
-                // Batch tail updates
                 if ((t & 2047) == 0) {
                     tail_.store(t, std::memory_order_release);
                 }
