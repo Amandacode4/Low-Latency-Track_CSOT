@@ -117,7 +117,7 @@ After each note, write **one sentence** in your own words about what surprised y
 - [ ] [`04-benchmarking-tools.md`](./04-benchmarking-tools.md) — chrono, rdtsc, Google Benchmark, perf, Valgrind, Cachegrind
   - [ ] I understand why `DoNotOptimize` / `ClobberMemory` exist.
   - [ ] I can name one situation where Cachegrind beats `perf` and vice-versa.
-- [ ] [`05-bonus-compiler.md`](./05-bonus-compiler.md) — ⭐ **bonus** *(optional)*
+- [ ] [`05-bonus-compiler.md`](./05-bonus-compiler.md) —  **bonus** *(optional)*
   - [ ] I know what `-O2`, `-march=native`, and `-flto` do.
   - [ ] I have opened Godbolt at least once.
 
