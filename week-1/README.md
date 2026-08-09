@@ -25,9 +25,9 @@ Work through these in order. Each note is short (~10-15 min). Don't skip — the
 | 2 | [`02-memory-model.md`](./02-memory-model.md) | `std::vector` / `std::array`, stack vs. heap, custom allocators | 25 min |
 | 3 | [`03-memory-hierarchy.md`](./03-memory-hierarchy.md) | L1/L2/L3/DRAM, latency numbers every programmer should know | 20 min |
 | 4 | [`04-benchmarking-tools.md`](./04-benchmarking-tools.md) | `chrono`, `rdtsc`, Google Benchmark, `perf`, Valgrind, Cachegrind | 35 min |
-| ⭐ | [`05-bonus-compiler.md`](./05-bonus-compiler.md) | **Bonus:** compiler flags, sanitizers, LTO/PGO, hints, reading assembly | 30 min |
+| 6 | [`05-bonus-compiler.md`](./05-bonus-compiler.md) | **Bonus:** compiler flags, sanitizers, LTO/PGO, hints, reading assembly | 30 min |
 
-Total reading: **~1.5–2 hours** (the ⭐ bonus is optional but highly recommended). Then the real work starts → the [**project**](./project/README.md).
+Total reading: **~1.5–2 hours** (the bonus is optional but highly recommended). Then the real work starts → the [**project**](./project/README.md).
 
 ---
 
