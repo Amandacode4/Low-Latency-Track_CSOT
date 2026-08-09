@@ -1,8 +1,8 @@
-# Week 1 — Introduction & Memory
+# Week 1 - Introduction & Memory
 
-> *"You can't improve what you can't measure."* — Peter Drucker
+> *"You can't improve what you can't measure."* - Peter Drucker
 >
-> *"You can't measure what you don't understand."* — every systems engineer ever
+> *"You can't measure what you don't understand."* - every systems engineer ever
 
 Welcome to Week 1 of the Low Latency track. This week is about **building the mental model**: understanding what "low latency" actually means, how memory is physically organized, and how to measure the performance of a piece of code without lying to yourself.
 
@@ -17,7 +17,7 @@ By the end of this week you will have:
 
 ## Reading Order
 
-Work through these in order. Each note is short (~10-15 min). Don't skip — they build on each other. Each topic file ends with a **"Further Reading"** section curated for that topic.
+Work through these in order. Each note is short (~10-15 min). Don't skip - they build on each other. Each topic file ends with a **"Further Reading"** section curated for that topic.
 
 | # | File | Topic | Est. time |
 |---|------|-------|-----------|
