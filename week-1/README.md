@@ -8,14 +8,14 @@ Welcome to Week 1 of the Low Latency track. This week is about **building the me
 
 By the end of this week you will have:
 
-- ✅ A working C++/CMake/perf/Google-Benchmark toolchain on Linux
-- ✅ An intuitive grasp of the memory hierarchy (and the brutal latency cliff between L1 and DRAM)
-- ✅ Your first reproducible microbenchmark
-- ✅ The skeleton of the **low-latency quant platform** project that you'll grow over the next 5 weeks
+- A working C++/CMake/perf/Google-Benchmark toolchain on Linux
+- An intuitive grasp of the memory hierarchy (and the brutal latency cliff between L1 and DRAM)
+- Your first reproducible microbenchmark
+- The skeleton of the **low-latency quant platform** project that you'll grow over the next 5 weeks
 
 ---
 
-## 📖 Reading Order
+## Reading Order
 
 Work through these in order. Each note is short (~10-15 min). Don't skip — they build on each other. Each topic file ends with a **"Further Reading"** section curated for that topic.
 
@@ -31,7 +31,7 @@ Total reading: **~1.5–2 hours** (the ⭐ bonus is optional but highly recommen
 
 ---
 
-## 🛠️ Setup
+## Setup
 
 Before you start, make sure you have:
 
@@ -58,7 +58,7 @@ sudo apt install -y build-essential cmake git python3 python3-pip \
 
 ---
 
-## 🎯 Project Brief
+## Project Brief
 
 [**→ Open `project/README.md`**](./project/README.md)
 
@@ -77,7 +77,7 @@ Networking, multi-threading, and lock-free queues come in later weeks. **Build t
 
 ---
 
-## ✅ Week 1 Checklist
+## Week 1 Checklist
 
 > Copy this into your Notion / GitHub project / a sticky note. **If you can tick every box in Phases 0–4, you're done with Week 1.** Phase 5 and the stretch goals are bonus glory.
 
@@ -183,7 +183,7 @@ If you can answer all of these without Googling, you've internalized Week 1:
 
 (Answers are scattered throughout the topic files — go find them.)
 
-### ⭐ Stretch Goals (Optional)
+### Stretch Goals (Optional)
 
 - [ ] Replaced CSV with a custom **binary tick format** (16–32 B per tick). Measured load-time difference.
 - [ ] **`mmap`-ed the input file** instead of `std::ifstream`-ing it.
@@ -199,7 +199,7 @@ If you can answer all of these without Googling, you've internalized Week 1:
 - [ ] Ran **Cachegrind** on your runner and identified the source line with the most L1 misses.
 - [ ] Profiled with **Callgrind + KCachegrind** — found one inefficiency you wouldn't have spotted otherwise.
 
-### 🧠 The Single Most Important Box
+### The Single Most Important Box
 
 If you check **only one** box from this entire list, make it this one:
 
@@ -209,7 +209,7 @@ That single skill is what the next 4 weeks are built on. Everything else is opti
 
 ---
 
-## 🎬 Must-Watch Talks (general — applies to the whole week)
+## Must-Watch Talks (general — applies to the whole week)
 
 In addition to the topic-specific "Further Reading" sections inside each file, these four talks define the field. Watch them in order.
 
@@ -220,7 +220,7 @@ In addition to the topic-specific "Further Reading" sections inside each file, t
 
 ---
 
-## 📚 Books (reference, optional)
+## Books (reference, optional)
 
 - **"Computer Systems: A Programmer's Perspective"** (Bryant & O'Hallaron) — the canonical undergrad textbook. Chapters 5, 6, 9. Often called CS:APP or "the bible".
 - **"Systems Performance"** (Brendan Gregg) — covers Linux performance end-to-end. Reference book.
@@ -229,7 +229,7 @@ In addition to the topic-specific "Further Reading" sections inside each file, t
 
 ---
 
-## 🎓 Free University Courses
+## Free University Courses
 
 - **[CMU 15-418 / 15-618 — Parallel Computer Architecture and Programming](https://www.cs.cmu.edu/~418/)** — best-in-class. Lectures on YouTube. Relevant from Week 3 onwards.
 - **[MIT 6.172 — Performance Engineering of Software Systems](https://ocw.mit.edu/courses/6-172-performance-engineering-of-software-systems-fall-2018/)** — full course on OCW. The Week 1-3 lectures align perfectly with this track.
@@ -237,7 +237,7 @@ In addition to the topic-specific "Further Reading" sections inside each file, t
 
 ---
 
-## 🤷 If You Only Read 5 Things This Week
+## If You Only Read 5 Things This Week
 
 1. [Latency Numbers Every Programmer Should Know](https://colin-scott.github.io/personal_website/research/interactive_latency.html) — interactive
 2. [Gallery of Processor Cache Effects](https://igoro.com/archive/gallery-of-processor-cache-effects/) — short, mind-bending
@@ -249,7 +249,7 @@ These five alone will rewire your brain.
 
 ---
 
-## 💬 Communities
+## Communities
 
 - **[r/cpp](https://reddit.com/r/cpp)** — current discussions, talks.
 - **[r/algotrading](https://reddit.com/r/algotrading)** — quant side.
