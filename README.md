@@ -36,8 +36,8 @@ connects a parser thread and a strategy thread. Head and tail are `std::atomic` 
 acquire/release ordering, and each side caches the other's index to avoid touching the shared line on every
 item. Per-symbol state is `alignas(64)` so one vector load never straddles two lines. Threads are pinned to cores.
 
-**Week 5, the gateway.** Non-blocking UDP socket with `SO_BUSY_POLL`; `recvmmsg` pulls up to 32 datagrams
-per system call instead of one, cutting kernel crossings; the receive loop runs on a pinned core.
+**Week 5, the gateway.** Non-blocking UDP socket with `SO_BUSY_POLL`. `recvmmsg` pulls up to 32 datagrams
+per system call instead of one, cutting kernel crossings. The receive loop runs on a pinned core.
 
 ## What this taught me that carries over to ML
 
